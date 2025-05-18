@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tokenbridge-sa
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tokenbridge-example
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tokenbridge-example
+  template:
+    metadata:
+      labels:
+        app: tokenbridge-example
+    spec:
+      serviceAccountName: tokenbridge-sa
+      volumes:
+        - name: token-vol
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: sa-token
+                  expirationSeconds: 3600
+                  audience: tokenbridge
+        - name: tokenbridge-vol
+          emptyDir: {}
+      containers:
+        - name: main-app
+          image: alpine:3.21
+          command: ["/bin/sh"]
+          args: ["-c", "sleep infinity"]
+          volumeMounts:
+            - name: tokenbridge-vol
+              mountPath: /var/run/secrets/tokenbridge
+              readOnly: true
+          env:
+            - name: TOKENBRIDGE_TOKEN_FILE
+              value: /var/run/secrets/tokenbridge/access-token
+
+        - name: sidecar
+          image: hupe1980/tokenbridge-k8s-sidecar:latest
+          volumeMounts:
+            - name: token-vol
+              mountPath: /var/run/secrets/tokens
+              readOnly: true
+            - name: tokenbridge-vol
+              mountPath: /var/run/secrets/tokenbridge
+          env:
+            - name: SA_TOKEN_PATH
+              value: /var/run/secrets/tokens/sa-token
+            - name: OUTPUT_TOKEN_PATH
+              value: /var/run/secrets/tokenbridge/access-token
+            - name: EXCHANGE_URL
+              value: https://14jlzn6ssj.execute-api.eu-central-1.amazonaws.com/k8s/exchange
+            - name: REFRESH_INTERVAL
+              value: 1h
+            - name: AUDIENCE
+              value: tokenbridge
